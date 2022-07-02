@@ -1,0 +1,471 @@
+//Multi Cycle MIPS implementation in Verilog
+`timescale 100us/1ps
+module MIPS_Multicycle(input clk, input reset,output reg [31:0]PC,
+output [31:0] ALUResult);
+
+// Main Module Signals
+wire [31:0]PC_plus_4;
+wire [31:0]In_4=32’d4;
+wire [31:0] Shift32bit_left_2_out_branch;
+wire [27:0] Shift_left_2_out_jump;
+wire [31:0] PCBranch;
+wire [31:0]PC_out_Branch_or_PC_plus_4;
+wire [31:0]PCJump;
+
+// ALU Signals
+wire [31:0]SrcA;
+wire [31:0]SrcB;
+wire [31:0]Sign_extend_data;
+reg [31:0]ALUOut;
+wire Zero;
+
+//Control Unit
+wire IorD,PCWrite,PCWriteCond,MemtoReg,MemWrite,MemRead,IRWrite, RegDst, RegWrite;
+wire [1:0] ALUOp,PCSource;
+wire [2:0] ALUControl;
+wire [1:0]ALUSrcB;
+wire [1:0]PCSrc;
+
+//Register File Signals
+wire [31:0] Write_Data1;
+wire [31:0]Read_Data1;
+wire [31:0]Read_Data2;
+wire [4:0]Rd;
+reg [31:0]A;
+reg [31:0]B;
+wire [31:0]PC_out;
+
+//For Main Memory
+reg [31:0] Instr;
+wire [31:0]Address;
+wire [31:0] WriteData;
+wire [31:0] ReadData;
+wire out;
+wire PCen;
+wire [31:0]RD;
+wire [14:0]FSM_COntrol_Word;
+wire [31:0]Instruction_Memory_Address;
+reg [31:0]Memory_data_reg;
+wire ALUSrcA;
+
+always@(posedge clk)
+begin
+if(reset)
+PC<=32’d0;
+else
+begin
+if(PCen)
+PC<=PC_out;
+end
+A<=Read_Data1;
+B<=Read_Data2;
+ALUOut<=ALUResult;
+Memory_data_reg<=RD;
+if(IRWrite)
+Instr<=RD;
+end
+assign FSM_COntrol_Word={PCWrite,MemWrite,IRWrite,RegWrite,ALUSrcA,PCWriteCond,
+IorD,MemtoReg,RegDst,ALUSrcB,PCSource,ALUOp};
+Shift32bitleft2 SL2Branch(Sign_extend_data,
+Shift32bit_left_2_out_branch);
+Shift26bitleft2 SL2Jump(Instr[25:0],Shift_left_2_out_jump);
+assign PCJump={PC[31:28],Shift_left_2_out_jump};
+assign PC_out=((PCSource==2’b00)?ALUResult:
+((PCSource==2’b01)?ALUOut:((PCSource==2’b10)?PCJump:PC_out)));
+Main_Memory M_M(Instruction_Memory_Address[7:2] ,B , MemWrite,MemRead,RD);
+Control_Unit Control_U(clk,reset,Instr[31:26],IorD,PCWrite,PCWriteCond,
+MemtoReg,MemWrite,MemRead,IRWrite, PCSource, ALUOp,
+ALUSrcB, ALUSrcA, RegDst, RegWrite);
+and(PC_update,PCWriteCond,Zero);
+or(PCen,PC_update,PCWrite);
+assign Instruction_Memory_Address=(IorD)?ALUOut:PC;
+assign Rd=(RegDst)?Instr[15:11]:Instr[20:16]; //for Rt->Rd
+RegisterFile R_F(clk,reset, Instr[25:21], Instr[20:16], Rd , Write_Data1,RegWrite,Read_Data1, Read_Data2);
+assign SrcA=(ALUSrcA)?A:PC;
+assign Sign_extend_data = {Instr[15],Instr[15],Instr[15],Instr[15],Instr[15],Instr[15],
+Instr[15],Instr[15],Instr[15],Instr[15],Instr[15],Instr[15],
+Instr[15],Instr[15],Instr[15],Instr[15],Instr[15:0]};
+assign SrcB=((ALUSrcB==2’b00)?B:((ALUSrcB==2’b01)?32’d4:((ALUSrcB==2’b10)?
+Sign_extend_data:Shift32bit_left_2_out_branch)));
+ALUControl_Unit A_U(ALUOp,Instr[5:0],ALUControl);
+ALU alu1(SrcA, SrcB, ALUControl, ALUResult, Zero, Ov,cout);
+assign Write_Data1=(MemtoReg)?Memory_data_reg:ALUOut;
+endmodule
+
+// 32 Bit ALU
+module ALU(input [31:0]a,input [31:0]b,input [2:0]f,
+output [31:0]result,output zeroflag,output overflowflag,output cout);
+wire [30:0] tempcout;
+wire cin=1’b0;
+wire cinsel,zf,less;
+assign less = 1’b0;
+mux2 m5(cin,~cin,f[2],cinsel);
+ALU1bit A1(a[0],b[0],cinsel,~cout,f[2:0],result[0],tempcout[0]);
+ALU1bit A2(a[1],b[1],tempcout[0],less,f[2:0],result[1],tempcout[1]);
+ALU1bit A3(a[2],b[2],tempcout[1],less,f[2:0],result[2],tempcout[2]);
+ALU1bit A4(a[3],b[3],tempcout[2],less,f[2:0],result[3],tempcout[3]);
+ALU1bit A5(a[4],b[4],tempcout[3],less,f[2:0],result[4],tempcout[4]);
+ALU1bit A6(a[5],b[5],tempcout[4],less,f[2:0],result[5],tempcout[5]);
+ALU1bit A7(a[6],b[6],tempcout[5],less,f[2:0],result[6],tempcout[6]);
+ALU1bit A8(a[7],b[7],tempcout[6],less,f[2:0],result[7],tempcout[7]);
+ALU1bit A9(a[8],b[8],tempcout[7],less,f[2:0],result[8],tempcout[8]);
+ALU1bit A10(a[9],b[9],tempcout[8],less,f[2:0],result[9],tempcout[9]);
+ALU1bit A11(a[10],b[10],tempcout[9],less,f[2:0],result[10],tempcout[10]);
+ALU1bit A12(a[11],b[11],tempcout[10],less,f[2:0],result[11],tempcout[11]);
+ALU1bit A13(a[12],b[12],tempcout[11],less,f[2:0],result[12],tempcout[12]);
+ALU1bit A14(a[13],b[13],tempcout[12],less,f[2:0],result[13],tempcout[13]);
+ALU1bit A15(a[14],b[14],tempcout[13],less,f[2:0],result[14],tempcout[14]);
+ALU1bit A16(a[15],b[15],tempcout[14],less,f[2:0],result[15],tempcout[15]);
+ALU1bit A17(a[16],b[16],tempcout[15],less,f[2:0],result[16],tempcout[16]);
+ALU1bit A18(a[17],b[17],tempcout[16],less,f[2:0],result[17],tempcout[17]);
+ALU1bit A19(a[18],b[18],tempcout[17],less,f[2:0],result[18],tempcout[18]);
+ALU1bit A20(a[19],b[19],tempcout[18],less,f[2:0],result[19],tempcout[19]);
+ALU1bit A21(a[20],b[20],tempcout[19],less,f[2:0],result[20],tempcout[20]);
+ALU1bit A22(a[21],b[21],tempcout[20],less,f[2:0],result[21],tempcout[21]);
+ALU1bit A23(a[22],b[22],tempcout[21],less,f[2:0],result[22],tempcout[22]);
+ALU1bit A24(a[23],b[23],tempcout[22],less,f[2:0],result[23],tempcout[23]);
+ALU1bit A25(a[24],b[24],tempcout[23],less,f[2:0],result[24],tempcout[24]);
+ALU1bit A26(a[25],b[25],tempcout[24],less,f[2:0],result[25],tempcout[25]);
+ALU1bit A27(a[26],b[26],tempcout[25],less,f[2:0],result[26],tempcout[26]);
+ALU1bit A28(a[27],b[27],tempcout[26],less,f[2:0],result[27],tempcout[27]);
+ALU1bit A29(a[28],b[28],tempcout[27],less,f[2:0],result[28],tempcout[28]);
+ALU1bit A30(a[29],b[29],tempcout[28],less,f[2:0],result[29],tempcout[29]);
+ALU1bit A31(a[30],b[30],tempcout[29],less,f[2:0],result[30],tempcout[30]);
+ALU1bit A32(a[31],b[31],tempcout[30],less,f[2:0],result[31],cout);
+
+or (zf,result[0],result[1],result[2],result[3],result[4],result[5],result[7],
+result[6],result[8],result[9],result[10],result[11],result[12],result[13],
+result[14],result[15],result[17],result[16],result[18],result[19],result[20],
+result[21],result[22],result[23],result[24],result[25],result[26],result[27],
+result[28],result[29],result[30],result[31]);
+not (zeroflag,zf); // zeroflag result
+xor (overflowflag,cout,tempcout[30]); //overflow flag
+endmodule
+
+module ALU1bit(input x1,input x2,input cin,input less,
+input [2:0]f,output result,output cout); // 1 bit ALU
+wire y1,y2,y3,y4,y5,y6;
+wire x2sel;
+assign y4=1’b0;
+buf(y5,less);
+mux2 m4(x2,~x2,f[2],x2sel);
+and (y1, x1, x2sel);
+or (y2, x1, x2sel);
+adder1bit a1(x1,x2sel,cin,y3,cout);
+mux2 m5(y4,y5,f[2],y6);
+mux4 m1(y1,y2,y3,y6,f[1:0],result); // 4:1 Mux for the output side of ALU
+endmodule
+
+module mux2 (input a, input b, input sel,output out); // 2:1 Mux
+wire out1, out2, selb;
+not (selb, sel);
+and (out1, a, selb);
+and (out2, b , sel);
+or (out, out1, out2);
+endmodule
+
+module mux4(input a,input b,input c,input d,input [1:0]f,output out); // 4:1 Mux using 2:1 MuX
+wire mux_1,mux_2;
+mux2 m1 (a,b,f[0],mux_1);
+mux2 m2 (c,d,f[0],mux_2);
+mux2 m3 (mux_1,mux_2,f[1],out);
+endmodule
+
+module adder1bit(input a,input b,input cin,output sum,output cout); // 1 Bit Adder
+xor (sum,a,b,cin); // Sum Logic
+and (c1,a,b); // Carry Logic
+and (c2,b,cin);
+and (c3,a,cin);
+or (c4,c1,c2);
+or (cout,c4,c3);
+endmodule
+
+//D Flip Flop
+module DFF(input clk,input reset,input writeenable,input d,output reg q);
+always @(negedge clk or posedge reset)
+begin
+if(reset)
+q<=1’b0;
+else
+if(writeenable)
+q<=d;
+end
+endmodule
+
+//Zero padding the 2 LSB’s of 1 32 bit number to get a modified 32 bit number
+module Shift32bitleft2(input [31:0] Sign_extend_data,output [31:0] Shift32bit_left_2_out_branch);
+assign Shift32bit_left_2_out_branch={Sign_extend_data[29:0],2’b00};
+endmodule
+
+//Left Shifting a 26 bit number by 2 to get 28 bit number
+module Shift26bitleft2(input [25:0] Jump_data_in ,output [27:0] Shift_left_2_out_jump);
+assign Shift_left_2_out_jump={Jump_data_in[25:0],2’b00};
+endmodule
+
+//Addition of 2 32 bit numbers
+module Add(input [31:0] a, input[31:0] b,output [31:0] c);
+assign c=a+b;
+endmodule
+//Main Memory
+module Main_Memory(input [5:0] PC ,input [31:0]write_data ,input MemWrite,input MemRead,output reg [31:0] Instr );
+reg [31:0]inst_mem[63:0];
+initial
+begin
+inst_mem[0]=32’h20080042;
+inst_mem[1]=32’h08000008;
+inst_mem[2]=32’h20090004;
+inst_mem[3]=32’h01095022;
+inst_mem[4]=32’h01485825;
+inst_mem[5]=32’hac0b002c;
+inst_mem[6]=32’h8d2c0028;
+inst_mem[7]=32’h08000007;
+inst_mem[8]=32’h1000fff9;
+end
+
+always@(*)
+begin
+if(MemWrite)
+inst_mem[PC]<=write_data;
+if(MemRead)
+Instr <= inst_mem[PC];
+end
+endmodule
+
+//ALU Control Unit
+module ALUControl_Unit(input [1:0] ALUOp,input [5:0] funct, output [2:0] ALUControl);
+assign ALUControl=(ALUOp==2’b00)?3’b010:((ALUOp==2’b01)?3’b110:(((ALUOp==2’b10)&(funct==6’b100000))?
+3’b010:(((ALUOp==2’b10)&(funct==6’b100010))?3’b110:(((ALUOp==2’b10)&(funct==6’b100100))?3’b000:
+(((ALUOp==2’b10)&(funct==6’b100101))?3’b001:3’b111)))));
+endmodule
+
+//Register File
+module RegisterFile(input clk,input reset, input [4:0] Rs, input [4:0] Rt, input [4:0] Rd, input [31:0] WriteData1,
+input RegWrite, output [31:0] ReadData1, output [31:0] ReadData2);
+wire [31:0] d[31:0];
+wire [31:0] ReadEnable;
+wire [31:0] Writeenable;
+assign ReadData1=(Rs==5’d0)?d[0]:((Rs==5’d1)?d[1]:((Rs==5’d2)?d[2]:((Rs==5’d3)?d[3]:((Rs==5’d4)?d[4]:((Rs==5’d5)?d[5]:((Rs==5’d6)?d[6]:((Rs==5’d7)?d[7]:((Rs==5’d8)?d[8]:((Rs==5’d9)?d[9]:((Rs==5’d10)?d[10]:((Rs==5’d11)?d[11]:((Rs==5’d12)?d[12]:((Rs==5’d12)?d[12]:((Rs==5’d13)?d[13]:((Rs==5’d14)?d[14]:((Rs==5’d15)?d[15]:((Rs==5’d16)?d[16]:((Rs==5’d17)?d[17]:((Rs==5’d18)?d[18]:((Rs==5’d19)?d[19]:((Rs==5’d20)?d[20]:((Rs==5’d21)?d[21]:((Rs==5’d22)?d[22]:((Rs==5’d23)?d[23]:((Rs==5’d24)?d[24]:((Rs==5’d25)?d[25]:((Rs==5’d26)?d[26]:((Rs==5’d27)?d[27]:((Rs==5’d28)?d[28]:((Rs==5’d29)?d[29]:((Rs==5’d30)?d[30]:d[31])))))))))))))))))))))))))))))));
+assign ReadData2=(Rt==5’d0)?d[0]:((Rt==5’d1)?d[1]:((Rt==5’d2)?d[2]:((Rt==5’d3)?d[3]:((Rt==5’d4)?d[4]:((Rt==5’d5)?d[5]:((Rt==5’d6)?d[6]:((Rt==5’d7)?d[7]:((Rt==5’d8)?d[8]:((Rt==5’d9)?d[9]:((Rt==5’d10)?d[10]:((Rt==5’d11)?d[11]:((Rt==5’d12)?d[12]:((Rt==5’d12)?d[12]:((Rt==5’d13)?d[13]:((Rt==5’d14)?d[14]:((Rt==5’d15)?d[15]:((Rt==5’d16)?d[16]:((Rt==5’d17)?d[17]:((Rt==5’d18)?d[18]:((Rt==5’d19)?d[19]:((Rt==5’d20)?d[20]:((Rt==5’d21)?d[21]:((Rt==5’d22)?d[22]:((Rt==5’d23)?d[23]:((Rt==5’d24)?d[24]:((Rt==5’d25)?d[25]:((Rt==5’d26)?d[26]:((Rt==5’d27)?d[27]:((Rt==5’d28)?d[28]:((Rt==5’d29)?d[29]:((Rt==5’d30)?d[30]:d[31])))))))))))))))))))))))))))))));
+assign ReadEnable[0]=(Rd==5’d0)?1’b1:1’b0;
+assign ReadEnable[1]=(Rd==5’d1)?1’b1:1’b0;
+assign ReadEnable[2]=(Rd==5’d2)?1’b1:1’b0;
+assign ReadEnable[3]=(Rd==5’d3)?1’b1:1’b0;
+assign ReadEnable[4]=(Rd==5’d4)?1’b1:1’b0;
+assign ReadEnable[5]=(Rd==5’d5)?1’b1:1’b0;
+assign ReadEnable[6]=(Rd==5’d6)?1’b1:1’b0;
+assign ReadEnable[7]=(Rd==5’d7)?1’b1:1’b0;
+assign ReadEnable[8]=(Rd==5’d8)?1’b1:1’b0;
+assign ReadEnable[9]=(Rd==5’d9)?1’b1:1’b0;
+assign ReadEnable[10]=(Rd==5’d10)?1’b1:1’b0;
+assign ReadEnable[11]=(Rd==5’d11)?1’b1:1’b0;
+assign ReadEnable[12]=(Rd==5’d12)?1’b1:1’b0;
+assign ReadEnable[13]=(Rd==5’d13)?1’b1:1’b0;
+assign ReadEnable[14]=(Rd==5’d14)?1’b1:1’b0;
+assign ReadEnable[15]=(Rd==5’d15)?1’b1:1’b0;
+assign ReadEnable[16]=(Rd==5’d16)?1’b1:1’b0;
+assign ReadEnable[17]=(Rd==5’d17)?1’b1:1’b0;
+assign ReadEnable[18]=(Rd==5’d18)?1’b1:1’b0;
+assign ReadEnable[19]=(Rd==5’d19)?1’b1:1’b0;
+assign ReadEnable[20]=(Rd==5’d20)?1’b1:1’b0;
+assign ReadEnable[21]=(Rd==5’d21)?1’b1:1’b0;
+assign ReadEnable[22]=(Rd==5’d22)?1’b1:1’b0;
+assign ReadEnable[23]=(Rd==5’d23)?1’b1:1’b0;
+assign ReadEnable[24]=(Rd==5’d24)?1’b1:1’b0;
+assign ReadEnable[25]=(Rd==5’d25)?1’b1:1’b0;
+assign ReadEnable[26]=(Rd==5’d26)?1’b1:1’b0;
+assign ReadEnable[27]=(Rd==5’d27)?1’b1:1’b0;
+assign ReadEnable[28]=(Rd==5’d28)?1’b1:1’b0;
+assign ReadEnable[29]=(Rd==5’d29)?1’b1:1’b0;
+assign ReadEnable[30]=(Rd==5’d30)?1’b1:1’b0;
+assign ReadEnable[31]=(Rd==5’d31)?1’b1:1’b0;
+
+and (Writeenable[0],ReadEnable[0],RegWrite);
+and (Writeenable[1],ReadEnable[1],RegWrite);
+and (Writeenable[2],ReadEnable[2],RegWrite);
+and (Writeenable[3],ReadEnable[3],RegWrite);
+and (Writeenable[4],ReadEnable[4],RegWrite);
+and (Writeenable[5],ReadEnable[5],RegWrite);
+and (Writeenable[6],ReadEnable[6],RegWrite);
+and (Writeenable[7],ReadEnable[7],RegWrite);
+and (Writeenable[8],ReadEnable[8],RegWrite);
+and (Writeenable[9],ReadEnable[9],RegWrite);
+and (Writeenable[10],ReadEnable[10],RegWrite);
+and (Writeenable[11],ReadEnable[11],RegWrite);
+and (Writeenable[12],ReadEnable[12],RegWrite);
+and (Writeenable[13],ReadEnable[13],RegWrite);
+and (Writeenable[14],ReadEnable[14],RegWrite);
+and (Writeenable[15],ReadEnable[15],RegWrite);
+and (Writeenable[16],ReadEnable[16],RegWrite);
+and (Writeenable[17],ReadEnable[17],RegWrite);
+and (Writeenable[18],ReadEnable[18],RegWrite);
+and (Writeenable[19],ReadEnable[19],RegWrite);
+and (Writeenable[20],ReadEnable[20],RegWrite);
+and (Writeenable[21],ReadEnable[21],RegWrite);
+and (Writeenable[22],ReadEnable[22],RegWrite);
+and (Writeenable[23],ReadEnable[23],RegWrite);
+and (Writeenable[24],ReadEnable[24],RegWrite);
+and (Writeenable[25],ReadEnable[25],RegWrite);
+and (Writeenable[26],ReadEnable[26],RegWrite);
+and (Writeenable[27],ReadEnable[27],RegWrite);
+and (Writeenable[28],ReadEnable[28],RegWrite);
+and (Writeenable[29],ReadEnable[29],RegWrite);
+and (Writeenable[30],ReadEnable[30],RegWrite);
+and (Writeenable[31],ReadEnable[31],RegWrite);
+
+Register32bit R0(clk, reset, Writeenable[0], WriteData1, d[0]);
+Register32bit R1(clk, reset, Writeenable[1], WriteData1, d[1]);
+Register32bit R2(clk, reset, Writeenable[2], WriteData1, d[2]);
+Register32bit R3(clk, reset, Writeenable[3], WriteData1, d[3]);
+Register32bit R4(clk, reset, Writeenable[4], WriteData1, d[4]);
+Register32bit R5(clk, reset, Writeenable[5], WriteData1, d[5]);
+Register32bit R6(clk, reset, Writeenable[6], WriteData1, d[6]);
+Register32bit R7(clk, reset, Writeenable[7], WriteData1, d[7]);
+Register32bit R8(clk, reset, Writeenable[8], WriteData1, d[8]);
+Register32bit R9(clk, reset, Writeenable[9], WriteData1, d[9]);
+Register32bit R10(clk, reset, Writeenable[10], WriteData1, d[10]);
+Register32bit R11(clk, reset, Writeenable[11], WriteData1, d[11]);
+Register32bit R12(clk, reset, Writeenable[12], WriteData1, d[12]);
+Register32bit R13(clk, reset, Writeenable[13], WriteData1, d[13]);
+Register32bit R14(clk, reset, Writeenable[14], WriteData1, d[14]);
+Register32bit R15(clk, reset, Writeenable[15], WriteData1, d[15]);
+Register32bit R16(clk, reset, Writeenable[16], WriteData1, d[16]);
+Register32bit R17(clk, reset, Writeenable[17], WriteData1, d[17]);
+Register32bit R18(clk, reset, Writeenable[18], WriteData1, d[18]);
+Register32bit R19(clk, reset, Writeenable[19], WriteData1, d[19]);
+Register32bit R20(clk, reset, Writeenable[20], WriteData1, d[20]);
+Register32bit R21(clk, reset, Writeenable[21], WriteData1, d[21]);
+Register32bit R22(clk, reset, Writeenable[22], WriteData1, d[22]);
+Register32bit R23(clk, reset, Writeenable[23], WriteData1, d[23]);
+Register32bit R24(clk, reset, Writeenable[24], WriteData1, d[24]);
+Register32bit R25(clk, reset, Writeenable[25], WriteData1, d[25]);
+Register32bit R26(clk, reset, Writeenable[26], WriteData1, d[26]);
+Register32bit R27(clk, reset, Writeenable[27], WriteData1, d[27]);
+Register32bit R28(clk, reset, Writeenable[28], WriteData1, d[28]);
+Register32bit R29(clk, reset, Writeenable[29], WriteData1, d[29]);
+Register32bit R30(clk, reset, Writeenable[30], WriteData1, d[30]);
+Register32bit R31(clk, reset, Writeenable[31], WriteData1, d[31]);
+endmodule
+
+module Register32bit(input clk, input reset, input writeenable, input [31:0]q, output [31:0]d); // 32 bit register file
+DFF D0(clk,reset,writeenable,q[0],d[0]);
+DFF D1(clk,reset,writeenable,q[1],d[1]);
+DFF D2(clk,reset,writeenable,q[2],d[2]);
+DFF D3(clk,reset,writeenable,q[3],d[3]);
+DFF D4(clk,reset,writeenable,q[4],d[4]);
+DFF D5(clk,reset,writeenable,q[5],d[5]);
+DFF D6(clk,reset,writeenable,q[6],d[6]);
+DFF D7(clk,reset,writeenable,q[7],d[7]);
+DFF D8(clk,reset,writeenable,q[8],d[8]);
+DFF D9(clk,reset,writeenable,q[9],d[9]);
+DFF D10(clk,reset,writeenable,q[10],d[10]);
+DFF D11(clk,reset,writeenable,q[11],d[11]);
+DFF D12(clk,reset,writeenable,q[12],d[12]);
+DFF D13(clk,reset,writeenable,q[13],d[13]);
+DFF D14(clk,reset,writeenable,q[14],d[14]);
+DFF D15(clk,reset,writeenable,q[15],d[15]);
+DFF D16(clk,reset,writeenable,q[16],d[16]);
+DFF D17(clk,reset,writeenable,q[17],d[17]);
+DFF D18(clk,reset,writeenable,q[18],d[18]);
+DFF D19(clk,reset,writeenable,q[19],d[19]);
+DFF D20(clk,reset,writeenable,q[20],d[20]);
+DFF D21(clk,reset,writeenable,q[21],d[21]);
+DFF D22(clk,reset,writeenable,q[22],d[22]);
+DFF D23(clk,reset,writeenable,q[23],d[23]);
+DFF D24(clk,reset,writeenable,q[24],d[24]);
+DFF D25(clk,reset,writeenable,q[25],d[25]);
+DFF D26(clk,reset,writeenable,q[26],d[26]);
+DFF D27(clk,reset,writeenable,q[27],d[27]);
+DFF D28(clk,reset,writeenable,q[28],d[28]);
+DFF D29(clk,reset,writeenable,q[29],d[29]);
+DFF D30(clk,reset,writeenable,q[30],d[30]);
+DFF D31(clk,reset,writeenable,q[31],d[31]);
+endmodule
+
+//Control Unit
+module Control_Unit(input clk, input reset,input[5:0] op,output IorD, output PCWrite, output PCWriteCond, output MemtoReg, output MemWrite, output MemRead, output IRWrite, output[1:0] PCSource,
+output [1:0] ALUOp, output [1:0]ALUSrcB, output ALUSrcA, output RegDst, output RegWrite);
+reg [3:0] State;
+reg [3:0] Next_State;
+parameter S0=4’b0000;
+parameter S1=4’b0001;
+parameter S2=4’b0010;
+parameter S3=4’b0011;
+parameter S4=4’b0100;
+parameter S5=4’b0101;
+parameter S6=4’b0110;
+parameter S7=4’b0111;
+parameter S8=4’b1000;
+parameter S9=4’b1001;
+parameter S10=4’b1010;
+parameter S11=4’b1011;
+
+always @(posedge clk)
+begin
+if(reset)
+begin
+Next_State<=S0;
+end
+else
+Next_State<=State;
+end
+always@(Next_State)
+begin
+case(Next_State)
+
+S0:
+State<=S1;
+S1: begin
+if((op==6’b100011) | (op==6’b101011))
+State<=S2;
+else if(op==6’b000000)
+State<=S6;
+else if (op==6’b000100)
+State<=S8;
+else if(op==6’b001000)
+State<=S9;
+else if(op==6’b000010)
+State<=S11;
+end
+S2: begin
+if(op==6’b100011)
+State<=S3;
+else if(op==6’b101011)
+State<=S5;
+else if(op==6’b001000)
+State<=S7;
+end
+S3:
+State<=S4;
+S4:
+State<=S0;
+S5:
+State<=S0;
+S6:
+State<=S7;
+S7:
+State<=S0;
+S8:
+State<=S0;
+S9:
+State<=S10;
+S10:
+State<=S0;
+S11:
+State<=S0;
+endcase
+end
+
+assign MemRead=((Next_State==S0)|(Next_State==S3))?1’b1:1’b0;
+assign ALUSrcA=((Next_State==S2)|(Next_State==S6)|(Next_State==S8)|(Next_State==S9))?1’b1:1’b0;
+assign IorD=((Next_State==S3)|(Next_State==S5))?1’b1:1’b0;
+assign IRWrite=(Next_State==S0)?1’b1:1’b0;
+assign ALUSrcB=(Next_State==S0)?2’b01:((Next_State==S1)?2’b11:(((Next_State==S2)|(Next_State==S9))?2’b10:2’b00));
+assign ALUOp=(((Next_State==S0)|(Next_State==S1))|(Next_State==S2)|(Next_State==S9)|(Next_State==S10)|(Next_State==S11)|(Next_State==S7)|(Next_State==S5)|(Next_State==S3)|(Next_State==S4))?2’b00:((Next_State==S6)?2’b10:((Next_State==S8)?2’b01:2’b11));
+assign PCWrite=((Next_State==S0)|(Next_State==S11))?1’b1:1’b0;
+assign PCSource=((Next_State==S0)|(Next_State==S1)|(Next_State==S2)|(Next_State==S3)|(Next_State==S4)|(Next_State==S5)|(Next_State==S6)|(Next_State==S7)|(Next_State==S9)|(Next_State==S10))?2’b00:((Next_State==S8)?2’b01:((Next_State==S11)?2’b10:2’b11));
+assign RegWrite=((Next_State==S4)|(Next_State==S7)|(Next_State==S10))?1’b1:1’b0;
+assign MemtoReg=(Next_State==S4)?1’b1:1’b0;
+assign RegDst=(Next_State==S7)?1’b1:1’b0;
+assign MemWrite=(Next_State==S5)?1’b1:1’b0;
+assign PCWriteCond=(Next_State==S8)?1’b1:1’b0;
+endmodule
