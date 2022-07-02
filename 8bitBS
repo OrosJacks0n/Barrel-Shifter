@@ -1,0 +1,144 @@
+
+Monday, 28 October 2013
+VHDL Code for 8-bit Barrel Shifter
+Sr. No.
+	
+Name of the Pin
+	
+Direction
+	
+Width
+	
+Description
+1
+	
+d_in
+	
+Input
+	
+8
+	
+data input
+2
+	
+Shift_by
+	
+Input
+	
+3
+	
+shift amount
+3
+	
+Rst_a
+	
+Input
+	
+1
+	
+Reset signal
+4
+	
+Clk
+	
+Input
+	
+1
+	
+Clock signal
+5
+	
+Shift_lt_rt
+	
+Input
+	
+1
+	
+‘0’=shift left
+‘1’=shift right
+6
+	
+P_load
+	
+Input
+	
+1
+	
+‘1’=receive input data
+‘0’=discard input data
+7
+	
+D_out
+	
+Output
+	
+8
+	
+Parallel data output
+Barrel shifter takes parallel data input and give shifted output either in left or right direction by a specific shift amount. When shift_by input is “000” it will place input data at the output without shifting. For specifying shifting direction shift_lt_rt pin is used. When it is ‘0’ the block will perform left shift operation and when it is ‘1’, it will perform right operation. Find out Test Bench here.
+Design Code
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+
+entity barrel_shifter is
+  
+  port (
+    d_in        : in  std_logic_vector(7 downto 0);   -- input vector
+    d_out       : out std_logic_vector(7 downto 0);   -- shifted output
+    shift_lt_rt : in  std_logic;                      -- 0=>left_operation 1=>right_operation
+    shift_by    : in  std_logic_vector(2 downto 0);   -- shift amount
+    clk         : in  std_logic;                      --  clock signal
+    rst_a       : in  std_logic;                      --   reset signal
+    p_load      : in  std_logic);                     -- parallel load
+
+end barrel_shifter;
+
+architecture beh of barrel_shifter is
+
+begin  -- beh
+ p1: process (clk,rst_a,shift_by,shift_lt_rt)
+ variable x,y : std_logic_vector(7 downto 0);
+ variable ctrl0,ctrl1,ctrl2 : std_logic_vector(1 downto 0);
+ begin  -- process p1
+   
+ ctrl0:=shift_by(0) & shift_lt_rt;
+ ctrl1:=shift_by(1) & shift_lt_rt;
+ ctrl2:=shift_by(2) & shift_lt_rt;
+
+ if(rst_a = '1') then
+  d_out<="00000000";
+ elsif(clk'event and clk = '1') then
+  if (p_load='0')then
+   assert(false) report "Parallel load low" severity warning;
+  elsif(shift_lt_rt='1')then
+   assert(false) report "right shift" severity warning;
+  elsif(shift_lt_rt='0')then
+   assert(false) report "left shift" severity warning;
+  end if;
+
+  if p_load='1' then
+   case ctrl0 is                                    
+    when "00"|"01" =>x:=d_in ;           
+    when "10" =>x:=d_in(6 downto 0) & d_in(7);  --shift left by 1 bit
+    when "11" =>x:=d_in(0) & d_in(7 downto 1);  --shift right by 1 bit
+    when others => null;
+   end case;
+   case ctrl1 is
+    when "00"|"01" =>y:=x;
+    when "10" =>y:=x(5 downto 0) & x(7 downto 6);  --shift left by 2 bits
+    when "11" =>y:=x(1 downto 0) & x(7 downto 2);  --shift right by 2 bits
+    when others => null;
+   end case;
+   case ctrl2 is
+    when "00"|"01" =>d_out<=y ;
+    when "10"|"11" =>d_out<= y(3 downto 0) & y(7 downto 4);  --shift right/left by 4 bits
+    when others => null;
+   end case;
+  end if;
+ end if;
+  end process p1; 
+end beh;
+
